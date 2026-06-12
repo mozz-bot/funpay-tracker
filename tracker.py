@@ -28,7 +28,7 @@ from bs4 import BeautifulSoup
 # =========================================================
 
 # TODO: Ganti dengan URL kategori "Arena Breakout" di FunPay
-TARGET_URL = "https://funpay.com/en/lots/XXXX/"  # Ganti XXXX dengan ID kategori Arena Breakout
+TARGET_URL = "https://funpay.com/en/lots/1650/"  # Ganti XXXX dengan ID kategori Arena Breakout
 
 ACTIVE_LISTINGS_FILE = "active_listings.csv"
 SOLD_ACCOUNTS_FILE = "sold_accounts.csv"
