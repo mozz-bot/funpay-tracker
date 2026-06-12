@@ -53,7 +53,7 @@ def scrape_with_requests(url: str) -> str:
     Mengembalikan None jika gagal / terindikasi diblokir Cloudflare.
     """
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = requests.get(url, headers=HEADERS, timeout=30)
         resp.raise_for_status()
 
         html = resp.text
@@ -88,28 +88,44 @@ def scrape_with_playwright(url: str) -> str:
         context = browser.new_context(user_agent=HEADERS["User-Agent"])
         page = context.new_page()
 
-        page.goto(url, timeout=60000)
+        page.goto(url, timeout=60000, wait_until="domcontentloaded")
 
         # Tunggu hingga elemen daftar item muncul (sesuaikan selector jika perlu)
         try:
-            page.wait_for_selector("a.tc-item", timeout=30000)
+            page.wait_for_selector("a.tc-item", timeout=45000)
         except Exception:
-            # Tetap lanjut walau selector belum ketemu, agar tidak crash total
+            print("[WARNING] Selector 'a.tc-item' tidak ditemukan dalam 45s.")
+            # Simpan HTML untuk debugging jika gagal
+            debug_html = page.content()
+            with open("debug_page.html", "w", encoding="utf-8") as f:
+                f.write(debug_html)
+            page.screenshot(path="debug_screenshot.png", full_page=True)
             page.wait_for_timeout(5000)
 
-        html = page.content()
-        browser.close()
-        return html
+         html = page.content()
+         browser.close()
+         return html
+
 
 
 def get_page_html(url: str) -> str:
     """
     Ambil HTML halaman, coba requests dulu, jika gagal/terblokir gunakan Playwright.
+    Retry hingga 2x jika Playwright gagal mendapat data.
     """
     html = scrape_with_requests(url)
-    if html is None:
+    if html is not None:
+        return html
+
+    for attempt in range(1, 3):
+        print(f"[INFO] Mencoba Playwright (percobaan {attempt}/2)...")
         html = scrape_with_playwright(url)
+        if html and "tc-item" in html:
+            return html
+        print("[WARNING] Hasil Playwright kosong/tidak valid, mencoba lagi...")
+
     return html
+
 
 
 def parse_listings(html: str) -> pd.DataFrame:
