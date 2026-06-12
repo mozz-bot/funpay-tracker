@@ -3,7 +3,7 @@ name: Scrape FunPay Sold Accounts Tracker
 on:
   schedule:
     # Jalan setiap hari pukul 23:50 UTC
-    - cron: "50 23 * * *"
+    - cron: "0 */6 * * *"
   workflow_dispatch: {}  # Memungkinkan trigger manual dari tab Actions
 
 permissions:
