@@ -250,25 +250,32 @@ def detect_premium(desc: str) -> bool:
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
     Terapkan semua aturan pembersihan data pada DataFrame hasil scraping:
-    1. Tambah kolom Storage_Millions
-    2. Tambah kolom Has_Premium
-    3. Hapus baris yang mengandung kata "Rent"/"Rental"
+    1. (OPTIMASI) Filter awal: Hanya ambil akun "Arena Breakout Mobile"
+    2. Filter awal: Hapus baris "Rent"/"Rental"
+    3. Ekstrak Storage (Juta)
+    4. Deteksi item Premium
     """
     if df.empty:
-        # Pastikan kolom tetap ada walau dataframe kosong
         df["Storage_Millions"] = pd.Series(dtype="float")
         df["Has_Premium"] = pd.Series(dtype="bool")
         return df
 
-    # 1. Konversi storage ke satuan juta
+    # 1. FILTER AWAL KHUSUS MOBILE (Membuang data PC/Infinite agar proses selanjutnya lebih ringan)
+    mask_mobile = df["Deskripsi"].str.contains(r"arena breakout mobile", case=False, na=False)
+    df = df[mask_mobile]
+
+    # 2. FILTER AWAL RENTAL (Membuang data sewa)
+    mask_rent = df["Deskripsi"].str.contains(r"rent(?:al)?", case=False, na=False)
+    df = df[~mask_rent]
+
+    # 3. Komputasi Regex Storage (Hanya berjalan pada data yang sudah disaring)
     df["Storage_Millions"] = df["Deskripsi"].apply(extract_storage_millions)
 
-    # 2. Deteksi item premium (knife/glove)
+    # 4. Komputasi Deteksi Premium (Hanya berjalan pada data yang sudah disaring)
     df["Has_Premium"] = df["Deskripsi"].apply(detect_premium)
 
-    # 3. Filter / drop baris yang mengandung "Rent" atau "Rental" (case-insensitive)
-    mask_rent = df["Deskripsi"].str.contains(r"rent(?:al)?", case=False, na=False)
-    df = df[~mask_rent].reset_index(drop=True)
+    # Reset index di akhir setelah semua baris yang tidak perlu dibuang
+    df = df.reset_index(drop=True)
 
     return df
 
