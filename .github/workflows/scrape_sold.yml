@@ -39,6 +39,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add active_listings.csv sold_accounts.csv
+          git add active_listings.csv
+          if [ -f sold_accounts.csv ]; then git add sold_accounts.csv; fi
           git diff --cached --quiet && echo "Tidak ada perubahan data." || git commit -m "chore: update data tracking FunPay [auto]"
           git push
+
