@@ -31,9 +31,20 @@ jobs:
         run: |
           python -m playwright install --with-deps chromium
 
-      - name: Run tracker script
+            - name: Run tracker script
         run: |
           python tracker.py
+
+      - name: Upload debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files
+          path: |
+            debug_page.html
+            debug_screenshot.png
+          if-no-files-found: ignore
+
 
       - name: Commit and push updated CSV files
         run: |
