@@ -102,10 +102,9 @@ def scrape_with_playwright(url: str) -> str:
             page.screenshot(path="debug_screenshot.png", full_page=True)
             page.wait_for_timeout(5000)
 
-         html = page.content()
-         browser.close()
-         return html
-
+        html = page.content()
+        browser.close()
+        return html
 
 
 def get_page_html(url: str) -> str:
@@ -125,6 +124,7 @@ def get_page_html(url: str) -> str:
         print("[WARNING] Hasil Playwright kosong/tidak valid, mencoba lagi...")
 
     return html
+
 
 
 
