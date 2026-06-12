@@ -3,7 +3,7 @@ name: Scrape FunPay Sold Accounts Tracker
 on:
   schedule:
     # Jalan setiap hari pukul 23:50 UTC
-    - cron: "0 */6 * * *"
+    - cron: "17 0/6 * * *"
   workflow_dispatch: {}  # Memungkinkan trigger manual dari tab Actions
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
         run: |
           python -m playwright install --with-deps chromium
 
-            - name: Run tracker script
+      - name: Run tracker script
         run: |
           python tracker.py
 
@@ -45,7 +45,6 @@ jobs:
             debug_screenshot.png
           if-no-files-found: ignore
 
-
       - name: Commit and push updated CSV files
         run: |
           git config user.name "github-actions[bot]"
@@ -54,4 +53,3 @@ jobs:
           if [ -f sold_accounts.csv ]; then git add sold_accounts.csv; fi
           git diff --cached --quiet && echo "Tidak ada perubahan data." || git commit -m "chore: update data tracking FunPay [auto]"
           git push
-
