@@ -1,4 +1,4 @@
-# trackerek.py
+# tracker.py
 """
 tracker.py
 ==========
@@ -10,7 +10,7 @@ Logika utama:
 3. Offer_ID yang ada di df_yesterday tapi TIDAK ADA di df_today dianggap "Terjual"
 4. Sebelum mencatat sebagai terjual, lakukan verifikasi ke halaman penawaran (check_if_really_sold)
    untuk memastikan akun benar-benar terjual, bukan hanya turun halaman.
-5. Simpan hasil "Terjual" ke sold_accounts.csv (riwayat, mode append)
+5. Simpan hasil "Terjual" ke sold_accounts_{bulan}.csv (riwayat, mode append)
 6. Timpa active_listings.csv dengan df_today untuk komparasi besok
 
 Catatan:
@@ -34,7 +34,10 @@ from bs4 import BeautifulSoup
 TARGET_URL = "https://funpay.com/en/lots/1650/"  # Ganti XXXX dengan ID kategori Arena Breakout
 
 ACTIVE_LISTINGS_FILE = "active_listings.csv"
-SOLD_ACCOUNTS_FILE = "sold_accounts.csv"
+
+# KODE BARU (Otomatis Split per Bulan):
+current_month = datetime.datetime.now().strftime("%Y_%m")  # Hasil: "2026_07"
+SOLD_ACCOUNTS_FILE = f"sold_accounts_{current_month}.csv"
 
 HEADERS = {
     "User-Agent": (
@@ -354,7 +357,7 @@ def run_comparison(df_today: pd.DataFrame):
       dan hentikan script (karena belum ada data pembanding).
     - Jika sudah ada, cari Offer_ID yang hilang (ada kemarin, tidak ada hari ini).
     - Verifikasi setiap Offer_ID yang hilang dengan check_if_really_sold:
-        * Jika benar terjual  -> catat ke sold_accounts.csv
+        * Jika benar terjual  -> catat ke sold_accounts_{bulan}.csv
         * Jika masih aktif    -> kembalikan ke df_today (agar tetap termonitor)
     - Selalu timpa active_listings.csv dengan df_today yang sudah diperbarui
       di akhir proses.
@@ -402,7 +405,7 @@ def run_comparison(df_today: pd.DataFrame):
         today_str = datetime.date.today().isoformat()
         df_sold["Date_Sold"] = today_str
 
-        # Append ke sold_accounts.csv
+        # Append ke sold_accounts_{bulan}.csv
         write_header = not os.path.exists(SOLD_ACCOUNTS_FILE)
         df_sold.to_csv(SOLD_ACCOUNTS_FILE, mode="a", header=write_header, index=False)
 
