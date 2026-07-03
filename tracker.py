@@ -1,3 +1,4 @@
+# trackerek.py
 """
 tracker.py
 ==========
@@ -7,8 +8,10 @@ Logika utama:
 1. Scrape daftar iklan aktif hari ini dari FunPay -> df_today
 2. Bandingkan dengan data hasil scrape kemarin (active_listings.csv) -> df_yesterday
 3. Offer_ID yang ada di df_yesterday tapi TIDAK ADA di df_today dianggap "Terjual"
-4. Simpan hasil "Terjual" ke sold_accounts.csv (riwayat, mode append)
-5. Timpa active_listings.csv dengan df_today untuk komparasi besok
+4. Sebelum mencatat sebagai terjual, lakukan verifikasi ke halaman penawaran (check_if_really_sold)
+   untuk memastikan akun benar-benar terjual, bukan hanya turun halaman.
+5. Simpan hasil "Terjual" ke sold_accounts.csv (riwayat, mode append)
+6. Timpa active_listings.csv dengan df_today untuk komparasi besok
 
 Catatan:
 - Jika request biasa (requests + BeautifulSoup) terhalang Cloudflare,
@@ -124,8 +127,6 @@ def get_page_html(url: str) -> str:
         print("[WARNING] Hasil Playwright kosong/tidak valid, mencoba lagi...")
 
     return html
-
-
 
 
 def parse_listings(html: str) -> pd.DataFrame:
@@ -297,6 +298,51 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================================================
+# 2b. VERIFIKASI STATUS PENAWARAN
+# =========================================================
+
+def check_if_really_sold(offer_id):
+    """
+    Mengecek langsung ke URL penawaran apakah benar-benar terjual
+    atau hanya turun halaman (masih aktif di halaman lain).
+
+    Mengembalikan True jika benar-benar terjual/tidak aktif,
+    False jika masih aktif (halaman penawaran masih bisa dibeli).
+    """
+    url = f"https://funpay.com/lots/offer?id={offer_id}"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        # Jika halaman tidak ditemukan (404, 410, dll) -> kemungkinan besar sudah dihapus/terjual
+        if resp.status_code != 200:
+            return True
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # Cari tombol beli (button atau link dengan class 'js-lot-buy')
+        buy_btn = soup.find('button', class_='js-lot-buy') or soup.find('a', class_='js-lot-buy')
+
+        # Jika tombol beli tidak ada -> penawaran sudah tidak aktif
+        if not buy_btn:
+            return True
+
+        # Periksa apakah tombol memiliki class 'disabled'
+        classes = buy_btn.get('class', [])
+        if isinstance(classes, str):
+            classes = classes.split()
+        if 'disabled' in classes:
+            return True
+
+        # Tombol ada dan tidak disabled -> masih aktif
+        return False
+
+    except Exception as e:
+        print(f"  ⚠️ Gagal verifikasi ID {offer_id}: {e}")
+        # Jika terjadi error jaringan/timeout, asumsikan belum terjual
+        # agar tidak salah mencatat penjualan palsu
+        return False
+
+
+# =========================================================
 # 3. LOGIKA KOMPARASI "AKUN TERJUAL"
 # =========================================================
 
@@ -306,9 +352,12 @@ def run_comparison(df_today: pd.DataFrame):
 
     - Jika active_listings.csv belum ada, buat file dari df_today
       dan hentikan script (karena belum ada data pembanding).
-    - Jika sudah ada, cari Offer_ID yang hilang (ada kemarin, tidak ada hari ini)
-      -> dianggap "Terjual", lalu simpan ke sold_accounts.csv.
-    - Selalu timpa active_listings.csv dengan df_today di akhir proses.
+    - Jika sudah ada, cari Offer_ID yang hilang (ada kemarin, tidak ada hari ini).
+    - Verifikasi setiap Offer_ID yang hilang dengan check_if_really_sold:
+        * Jika benar terjual  -> catat ke sold_accounts.csv
+        * Jika masih aktif    -> kembalikan ke df_today (agar tetap termonitor)
+    - Selalu timpa active_listings.csv dengan df_today yang sudah diperbarui
+      di akhir proses.
     """
     import os
 
@@ -327,34 +376,51 @@ def run_comparison(df_today: pd.DataFrame):
     df_today["Offer_ID"] = df_today["Offer_ID"].astype(str)
 
     # --- Cari Offer_ID yang ada kemarin TAPI TIDAK ADA hari ini ---
-    ids_yesterday = set(df_yesterday["Offer_ID"].astype(str))
-    ids_today = set(df_today["Offer_ID"].astype(str))
+    ids_yesterday = set(df_yesterday["Offer_ID"])
+    ids_today = set(df_today["Offer_ID"])
 
-    sold_ids = ids_yesterday - ids_today
+    missing_ids = ids_yesterday - ids_today
 
-    if sold_ids:
-        df_sold = df_yesterday[df_yesterday["Offer_ID"].isin(sold_ids)].copy()
+    actually_sold_ids = set()    # Offer_ID yang benar-benar terjual
+    still_active_ids = set()     # Offer_ID yang masih aktif (turun halaman)
 
-        # Tambahkan kolom Date_Sold dengan tanggal hari ini
+    if missing_ids:
+        print(f"[INFO] Mendeteksi {len(missing_ids)} Offer_ID hilang dari halaman. Memverifikasi status...")
+        for offer_id in missing_ids:
+            if check_if_really_sold(offer_id):
+                actually_sold_ids.add(offer_id)
+                print(f"  ✅ Offer {offer_id} TERJUAL (terverifikasi).")
+            else:
+                still_active_ids.add(offer_id)
+                print(f"  ⏸️ Offer {offer_id} masih aktif (turun halaman).")
+    else:
+        print("[INFO] Tidak ada perubahan Offer_ID.")
+
+    # --- Proses akun yang benar-benar terjual ---
+    if actually_sold_ids:
+        df_sold = df_yesterday[df_yesterday["Offer_ID"].isin(actually_sold_ids)].copy()
         today_str = datetime.date.today().isoformat()
         df_sold["Date_Sold"] = today_str
 
-        # --- Append ke sold_accounts.csv ---
+        # Append ke sold_accounts.csv
         write_header = not os.path.exists(SOLD_ACCOUNTS_FILE)
-        df_sold.to_csv(
-            SOLD_ACCOUNTS_FILE,
-            mode="a",
-            header=write_header,
-            index=False,
-        )
+        df_sold.to_csv(SOLD_ACCOUNTS_FILE, mode="a", header=write_header, index=False)
 
-        print(f"[INFO] Ditemukan {len(df_sold)} akun terjual. Disimpan ke '{SOLD_ACCOUNTS_FILE}'.")
+        print(f"[INFO] {len(df_sold)} akun terjual disimpan ke '{SOLD_ACCOUNTS_FILE}'.")
     else:
-        print("[INFO] Tidak ada akun yang terjual hari ini.")
+        print("[INFO] Tidak ada akun yang benar-benar terjual.")
 
-    # --- Timpa active_listings.csv dengan data hari ini untuk komparasi besok ---
+    # --- Kembalikan akun yang masih aktif ke daftar hari ini ---
+    if still_active_ids:
+        df_still_active = df_yesterday[df_yesterday["Offer_ID"].isin(still_active_ids)].copy()
+        # Gabungkan dengan df_today (hindari duplikat Offer_ID)
+        df_today = pd.concat([df_today, df_still_active], ignore_index=True)
+        df_today = df_today.drop_duplicates(subset="Offer_ID", keep="first")
+        print(f"[INFO] {len(df_still_active)} akun masih aktif, dikembalikan ke daftar hari ini.")
+
+    # --- Simpan daftar terkini untuk komparasi besok ---
     df_today.to_csv(ACTIVE_LISTINGS_FILE, index=False)
-    print(f"[INFO] '{ACTIVE_LISTINGS_FILE}' diperbarui dengan {len(df_today)} iklan aktif hari ini.")
+    print(f"[INFO] '{ACTIVE_LISTINGS_FILE}' diperbarui dengan {len(df_today)} iklan aktif.")
 
 
 # =========================================================
