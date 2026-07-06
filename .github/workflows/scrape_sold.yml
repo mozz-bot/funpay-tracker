@@ -2,7 +2,7 @@ name: Scrape FunPay Sold Accounts Tracker
 
 on:
   schedule:
-    # Jalan setiap hari pukul 23:50 UTC
+    # Jalan otomatis setiap 2 jam (menit ke-17)
     - cron: "17 */2 * * *"
   workflow_dispatch: {}  # Memungkinkan trigger manual dari tab Actions
 
@@ -49,7 +49,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add active_listings.csv
-          if [ -f sold_accounts.csv ]; then git add sold_accounts.csv; fi
+          
+          # Menambahkan seluruh file .csv (active_listings.csv dan semua sold_accounts bulanan)
+          git add *.csv
+          
           git diff --cached --quiet && echo "Tidak ada perubahan data." || git commit -m "chore: update data tracking FunPay [auto]"
           git push
